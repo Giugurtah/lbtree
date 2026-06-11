@@ -39,6 +39,18 @@ class Node:
         Normalised impurity decrease relative to the tree root.
     tree_partial_impurity_reduction : float or None
         Cumulative impurity reduction up to (and including) this node.
+    tau_decrease : float or None
+        Incremental tau (Δτ) of the split at this node.
+        Δτ = PPI × (1 − impurity_decrease) = (I_t − I_L − I_R) / I_root.
+        Zero for leaf nodes.
+    cumulative_path_tau : float or None
+        Sum of Δτ for all splits along the path from root to this node.
+        Used as the y-axis in the tau visual-pruning layout.
+        Zero at the root; increases monotonically toward leaves.
+    tree_partial_tau_reduction : float or None
+        Global cumulative tau of the tree when built up split by split
+        (expansion ordered by cumulative_path_tau ascending).
+        Analogous to tree_partial_impurity_reduction.
     suggested_pruning : bool or None
         True if this node was flagged as the suggested pruning point.
     feature : str or None
@@ -77,6 +89,9 @@ class Node:
         impurity=None,
         impurity_decrease=None,
         tree_partial_impurity_reduction=None,
+        tau_decrease=None,
+        cumulative_path_tau=None,
+        tree_partial_tau_reduction=None,
         suggested_pruning=None,
         feature=None,
         treshold=None,
@@ -99,6 +114,9 @@ class Node:
         self.impurity                        = impurity
         self.impurity_decrease               = impurity_decrease
         self.tree_partial_impurity_reduction = tree_partial_impurity_reduction
+        self.tau_decrease                    = tau_decrease
+        self.cumulative_path_tau             = cumulative_path_tau
+        self.tree_partial_tau_reduction      = tree_partial_tau_reduction
         self.suggested_pruning               = suggested_pruning
         self.feature                         = feature
         self.treshold                        = treshold

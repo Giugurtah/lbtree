@@ -45,14 +45,15 @@ def _compute_offsets_for_position(pos: int, depth: int) -> Tuple[float, float]:
 
 
 def compute_tree_layout(root: Node):
-    """Return (max_depth, max_lc, max_rc, max_impurity_decrease)."""
+    """Return (max_depth, max_lc, max_rc, max_impurity_decrease, max_cumulative_path_tau)."""
     if root is None:
-        return 0, 0.0, 0.0, 0.0
+        return 0, 0.0, 0.0, 0.0, 0.0
 
-    max_depth = 0
-    max_lc    = 0.0
-    max_rc    = 0.0
-    max_imp   = 0.0
+    max_depth    = 0
+    max_lc       = 0.0
+    max_rc       = 0.0
+    max_imp      = 0.0
+    max_cum_tau  = 0.0
 
     stack = [(root, 0)]
     while stack:
@@ -63,13 +64,16 @@ def compute_tree_layout(root: Node):
             max_depth = d
         if float(node.impurity_decrease) > max_imp:
             max_imp = node.impurity_decrease
+        cum_tau = node.cumulative_path_tau if node.cumulative_path_tau is not None else 0.0
+        if cum_tau > max_cum_tau:
+            max_cum_tau = cum_tau
         lc_node, rc_node = _compute_offsets_for_position(node.position, d)
         if lc_node > max_lc: max_lc = lc_node
         if rc_node > max_rc: max_rc = rc_node
         if node.left  is not None: stack.append((node.left,  d + 1))
         if node.right is not None: stack.append((node.right, d + 1))
 
-    return max_depth, max_lc, max_rc, max_imp
+    return max_depth, max_lc, max_rc, max_imp, max_cum_tau
 
 
 def _custom_round(value, decimals=2):
@@ -108,6 +112,9 @@ def _recurse_vp(node: Node):
             "labels":                          int(node.N),
             "impurity_decrement":              float(node.impurity_decrease),
             "tree_partial_impurity_reduction": float(node.tree_partial_impurity_reduction),
+            "tau_decrease":                    float(node.tau_decrease)            if node.tau_decrease            is not None else 0.0,
+            "cumulative_path_tau":             float(node.cumulative_path_tau)     if node.cumulative_path_tau     is not None else 0.0,
+            "tree_partial_tau_reduction":      float(node.tree_partial_tau_reduction) if node.tree_partial_tau_reduction is not None else 0.0,
             "labArray":                        node.labels.tolist(),
             "gcr":                             gcr,
             "y_stats":                         node.y_stats,
@@ -127,6 +134,9 @@ def _recurse_vp(node: Node):
         "impurity":                        float(node.impurity),
         "impurity_decrement":              float(node.impurity_decrease),
         "tree_partial_impurity_reduction": float(node.tree_partial_impurity_reduction),
+        "tau_decrease":                    float(node.tau_decrease)            if node.tau_decrease            is not None else 0.0,
+        "cumulative_path_tau":             float(node.cumulative_path_tau)     if node.cumulative_path_tau     is not None else 0.0,
+        "tree_partial_tau_reduction":      float(node.tree_partial_tau_reduction) if node.tree_partial_tau_reduction is not None else 0.0,
         "labels":                          int(node.N),
         "labArray":                        node.labels.tolist(),
         "y_stats":                         node.y_stats,
@@ -624,6 +634,146 @@ def _html_visual_pruning(tree_JSON, plot_JSON, title):
 </html>"""
 
 
+def _html_visual_pruning_tau(tree_JSON, plot_JSON, title):
+    extra_css = """
+    .impurity-line { position: absolute; width: 90%; border-top: 1px dashed #cccccc; z-index: -2; transition: border-color 0.3s; transform: translateY(12px) }
+    .suggested-line { position: absolute; width: 90%; border-top: 1px dashed #e61414; z-index: -2; transition: border-color 0.3s; transform: translateY(12px) }
+    .impurity-line.highlighted { border-top: 2px dashed #4a90e2; z-index: -1 }
+    .suggested-line.highlighted { border-top: 2px dashed #e61414; z-index: -1 }
+    .impurity-label-left  { position: absolute; font-size: 11px; color: #666; background-color: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; transition: color 0.3s; z-index: 0; right: 0%; transform: translateY(12px) }
+    .impurity-label-right { position: absolute; font-size: 11px; color: #666; background-color: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; transition: color 0.3s; z-index: 0; left:  0%; transform: translateY(12px) }
+    .suggested-label-left  { position: absolute; font-size: 11px; color: #e61414; background-color: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; z-index: 1; right: 0%; transform: translateY(12px) }
+    .suggested-label-right { position: absolute; font-size: 11px; color: #e61414; background-color: rgba(255,255,255,0.8); padding: 2px 5px; border-radius: 3px; z-index: 1; left:  0%; transform: translateY(12px) }
+    .impurity-label-left.highlighted  { color: #ffffff; background-color: rgba(74,144,226,0.95); font-weight: bold; z-index: 11 }
+    .impurity-label-right.highlighted { color: #ffffff; background-color: rgba(74,144,226,0.95); font-weight: bold; z-index: 11 }
+    .suggested-label-left.highlighted  { color: #ffffff; background-color: #e61414; font-weight: bold; z-index: 11 }
+    .suggested-label-right.highlighted { color: #ffffff; background-color: #e61414; font-weight: bold; z-index: 11 }
+    .square.highlighted-branch:after {{ background: linear-gradient(to top left, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }}
+    .d_l.highlighted-branch:after    {{ background: linear-gradient(to top right, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }}
+    """
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <style>{_COMMON_CSS}{extra_css}</style>
+</head>
+<body>
+    <h1>{title}</h1>
+    <div class="tree-container" id="tree"></div>
+    <div id="tooltip" class="tooltip"></div>
+    <script>
+        const treeData = {tree_JSON};
+        const plotData = {plot_JSON};
+
+        function iter(node, left, d, h, prev_tau) {{
+            let impurityLineElement = document.createElement("div");
+            impurityLineElement.style.top = (15 + node.cumulative_path_tau * h) + "%";
+            impurityLineElement.setAttribute("data-node-id", node.position);
+
+            let impurityLabelLeft = document.createElement("div");
+            impurityLabelLeft.style.top = (15 + node.cumulative_path_tau * h - 1) + "%";
+            impurityLabelLeft.innerText = "τ_t(T): " + node.cumulative_path_tau.toFixed(3);
+            impurityLabelLeft.setAttribute("data-node-id", node.position);
+
+            let impurityLabelRight = document.createElement("div");
+            impurityLabelRight.style.top = (15 + node.cumulative_path_tau * h - 1) + "%";
+            impurityLabelRight.innerText = "τ(T): " + node.tree_partial_tau_reduction.toFixed(3);
+            impurityLabelRight.setAttribute("data-node-id", node.position);
+
+            if (node.suggested == 1) {{
+                impurityLineElement.classList.add("suggested-line");
+                impurityLabelLeft.classList.add("suggested-label-left");
+                impurityLabelRight.classList.add("suggested-label-right");
+            }} else {{
+                impurityLineElement.classList.add("impurity-line");
+                impurityLabelLeft.classList.add("impurity-label-left");
+                impurityLabelRight.classList.add("impurity-label-right");
+            }}
+            tree.appendChild(impurityLabelLeft);
+            tree.appendChild(impurityLabelRight);
+            tree.appendChild(impurityLineElement);
+
+            if (node.cumulative_path_tau != 0.0) {{
+                if (node.position % 2 === 0) {{
+                    let el = document.createElement("div");
+                    el.classList.add("square", "d_r");
+                    el.style.left   = left + "%";
+                    el.style.top    = 15 + prev_tau * h + "%";
+                    el.style.height = (node.cumulative_path_tau - prev_tau) * h + "%";
+                    el.style.width  = d + "%";
+                    el.setAttribute("data-node-id", node.position);
+                    el.setAttribute("data-impurity-decrease", node.cumulative_path_tau);
+                    tree.appendChild(el);
+                }} else {{
+                    let el = document.createElement("div");
+                    el.classList.add("square", "d_l");
+                    el.style.right  = (100 - left) + "%";
+                    el.style.top    = 15 + prev_tau * h + "%";
+                    el.style.height = (node.cumulative_path_tau - prev_tau) * h + "%";
+                    el.style.width  = d + "%";
+                    el.setAttribute("data-node-id", node.position);
+                    el.setAttribute("data-impurity-decrease", node.cumulative_path_tau);
+                    tree.appendChild(el);
+                }}
+            }}
+
+            if (node.isLeaf == 1) {{
+                let nodeElement = document.createElement("div");
+                nodeElement.classList.add("leaf");
+                nodeElement.style.left = left + "%";
+                nodeElement.style.top  = 15 + node.cumulative_path_tau * h + "%";
+                nodeElement.setAttribute("data-node-id", node.position);
+                nodeElement.setAttribute("data-impurity-decrease", node.cumulative_path_tau);
+                nodeElement.onmouseover = function(event) {{ showTooltip(event, node, 15 + node.cumulative_path_tau * h, left); highlightImpurityLine(node.position); highlightSubtree(node.cumulative_path_tau); }};
+                nodeElement.onmouseout  = function() {{ hideTooltip(); unhighlightImpurityLine(node.position); unhighlightSubtree(); }};
+                let nodeValue = document.createElement("div");
+                nodeValue.classList.add("leaf_value");
+                nodeValue.style.left = left + "%";
+                nodeValue.style.top  = 15 + node.cumulative_path_tau * h + "%";
+                nodeValue.innerText  = node.value;
+                let canvas = document.createElement("canvas");
+                canvas.width = 36; canvas.height = 36;
+                canvas.style.position = "absolute"; canvas.style.top = "-6px"; canvas.style.left = "-6px";
+                canvas._lbNodeData = node;
+                nodeElement.appendChild(canvas);
+                tree.appendChild(nodeElement);
+                tree.appendChild(nodeValue);
+                drawNodeChart(canvas, node);
+                return;
+            }}
+
+            let nodeElement = document.createElement("div");
+            nodeElement.classList.add("node");
+            nodeElement.style.left = left + "%";
+            nodeElement.style.top  = 15 + node.cumulative_path_tau * h + "%";
+            nodeElement.setAttribute("data-node-id", node.position);
+            nodeElement.setAttribute("data-impurity-decrease", node.cumulative_path_tau);
+            nodeElement.onmouseover = function(event) {{ showTooltip(event, node, 15 + node.cumulative_path_tau * h, left); highlightImpurityLine(node.position); highlightSubtree(node.cumulative_path_tau); }};
+            nodeElement.onmouseout  = function() {{ hideTooltip(); unhighlightImpurityLine(node.position); unhighlightSubtree(); }};
+            let canvas = document.createElement("canvas");
+            canvas.width = 36; canvas.height = 36;
+            canvas.style.position = "absolute"; canvas.style.top = "-6px"; canvas.style.left = "-6px";
+            canvas._lbNodeData = node;
+            nodeElement.appendChild(canvas);
+            tree.appendChild(nodeElement);
+            drawNodeChart(canvas, node);
+
+            iter(node.children[0], left - d / 2, d / 2, h, node.cumulative_path_tau);
+            iter(node.children[1], left + d / 2, d / 2, h, node.cumulative_path_tau);
+        }}
+
+        {_js_common()}
+
+        d = 80 / (plotData.l_c + plotData.r_c);
+        h = 65 / (plotData.max_cum_tau || 1);
+        iter(treeData, 10 + d * plotData.l_c, d, h, 0);
+    </script>
+</body>
+</html>"""
+
+
 def _html_standard(tree_JSON, plot_JSON, title):
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -729,6 +879,7 @@ def plot_html(
     output_file: str     = "tree.html",
     title: str           = "Tree Visualisation",
     visual_pruning: bool = False,
+    vp_metric: str       = "impurity",
     color_palette        = None,
     gradient_colors      = None,
 ) -> None:
@@ -746,10 +897,12 @@ def plot_html(
     visual_pruning : bool, default False
         False → standard layout: uniform branch lengths per depth level.
         True  → visual-pruning layout: node vertical position proportional
-                to ``impurity_decrease``; dashed horizontal lines show
-                V_t(T) and V(T) values.
-                For twoClass, impurity_decrease is based on relative variance
-                reduction instead of Gini.
+                to ``vp_metric``; dashed horizontal lines show metric values.
+    vp_metric : {"impurity", "tau"}, default "impurity"
+        Metric for the visual-pruning y-axis.
+        "impurity" → ``impurity_decrease`` (classic VP behaviour).
+        "tau"      → ``cumulative_path_tau`` (Goodman-Kruskal τ VP).
+        Ignored when ``visual_pruning=False``.
     color_palette : list[str], optional
         Hex colour list for the target classes (classification models).
         Defaults to DEFAULT_COLORS.  Ignored for twoClass.
@@ -763,18 +916,20 @@ def plot_html(
 
     Examples
     --------
-    # Classification (existing behaviour)
+    # Standard layout
     plot_html(clf, "tree.html")
 
-    # Regression / twoClass — default blue-to-red gradient
-    plot_html(reg, "tree_reg.html")
+    # Visual pruning — impurity (classic)
+    plot_html(clf, "tree_vp.html", visual_pruning=True)
 
-    # twoClass with custom 3-stop diverging gradient
-    plot_html(reg, "tree_reg.html",
-              gradient_colors=["#2166AC", "#F7F7F7", "#D6604D"])
+    # Visual pruning — tau
+    plot_html(clf, "tree_tau.html", visual_pruning=True, vp_metric="tau")
     """
     if model.root is None:
         raise ValueError("Tree is empty. Call fit() before plot_html().")
+
+    if vp_metric not in ("impurity", "tau"):
+        raise ValueError("vp_metric must be 'impurity' or 'tau'.")
 
     is_twoclass = getattr(model, "model", None) == "twoClass"
 
@@ -786,7 +941,7 @@ def plot_html(
     if len(gradient_colors) < 2 or len(gradient_colors) > 3:
         raise ValueError("gradient_colors must contain 2 or 3 hex colour strings.")
 
-    _, l_c, r_c, max_imp = compute_tree_layout(model.root)
+    _, l_c, r_c, max_imp, max_cum_tau = compute_tree_layout(model.root)
 
     # For twoClass: extract global y range from the root node y_stats
     y_global_min = 0.0
@@ -799,6 +954,7 @@ def plot_html(
         "l_c":              l_c,
         "r_c":              r_c,
         "max_imp_decrease": max_imp,
+        "max_cum_tau":      max_cum_tau,
         "colors":           color_palette,
         "labels":           model.root.labels.tolist(),
         "is_twoclass":      is_twoclass,
@@ -810,7 +966,10 @@ def plot_html(
 
     if visual_pruning:
         tree_JSON = json.dumps(_recurse_vp(model.root), indent=2)
-        html      = _html_visual_pruning(tree_JSON, plot_JSON, title)
+        if vp_metric == "tau":
+            html = _html_visual_pruning_tau(tree_JSON, plot_JSON, title)
+        else:
+            html = _html_visual_pruning(tree_JSON, plot_JSON, title)
     else:
         tree_JSON = json.dumps(_recurse_std(model.root), indent=2)
         html      = _html_standard(tree_JSON, plot_JSON, title)
