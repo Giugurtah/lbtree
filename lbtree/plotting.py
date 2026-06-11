@@ -648,8 +648,8 @@ def _html_visual_pruning_tau(tree_JSON, plot_JSON, title):
     .impurity-label-right.highlighted { color: #ffffff; background-color: rgba(74,144,226,0.95); font-weight: bold; z-index: 11 }
     .suggested-label-left.highlighted  { color: #ffffff; background-color: #e61414; font-weight: bold; z-index: 11 }
     .suggested-label-right.highlighted { color: #ffffff; background-color: #e61414; font-weight: bold; z-index: 11 }
-    .square.highlighted-branch:after {{ background: linear-gradient(to top left, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }}
-    .d_l.highlighted-branch:after    {{ background: linear-gradient(to top right, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }}
+    .square.highlighted-branch:after { background: linear-gradient(to top left, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }
+    .d_l.highlighted-branch:after    { background: linear-gradient(to top right, transparent calc(50% - 1px), orange, transparent calc(50% + 1px)) !important }
     """
     return f"""<!DOCTYPE html>
 <html lang="en">

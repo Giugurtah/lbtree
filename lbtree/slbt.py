@@ -126,7 +126,9 @@ class SLBT(BaseLBTree):
 
         self.root = self._grow_tree(strategy, X, y, x_s)
         self._calculate_tree_partial_impurity_reduction()
+        self._calculate_tau_fields()
         self._calculate_tree_partial_tau_reduction()
+        self._rebuild_report()
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
@@ -200,7 +202,6 @@ class SLBT(BaseLBTree):
         root_N: int           = 1,
         depth: int            = 0,
         pos: int              = 1,
-        parent_cum_tau: float = 0.0,
     ) -> Node:
 
         X = self._drop_constant_columns(X)
@@ -217,14 +218,11 @@ class SLBT(BaseLBTree):
             )
             tree_partial_impurity_reduction = 0.0
 
-        cumulative_path_tau = parent_cum_tau
-
         # --- pre-split stopping criteria ---
         leaf = self._check_criteria_before(
             y, pos, impurity, distribution, depth,
             n_labels, n_samples, n_feats,
             impurity_decrease, tree_partial_impurity_reduction,
-            parent_cum_tau=cumulative_path_tau,
         )
         if leaf is not None:
             return leaf
@@ -242,13 +240,9 @@ class SLBT(BaseLBTree):
             y, pos, impurity, distribution, depth,
             best_gpi, best_pi,
             impurity_decrease, tree_partial_impurity_reduction,
-            parent_cum_tau=cumulative_path_tau,
         )
         if leaf is not None:
             return leaf
-
-        tau_decrease  = best_pi * (1.0 - impurity_decrease)
-        child_cum_tau = cumulative_path_tau + tau_decrease
 
         # --- threshold values and split ---
         x_vals    = np.unique(X[best_feature])
@@ -262,12 +256,10 @@ class SLBT(BaseLBTree):
         left  = self._grow_tree(
             strategy, X.loc[indexL], y[indexL], x_s[indexL],
             root_impurity, root_N, depth + 1, 2 * pos,
-            parent_cum_tau=child_cum_tau,
         )
         right = self._grow_tree(
             strategy, X.loc[indexR], y[indexR], x_s[indexR],
             root_impurity, root_N, depth + 1, 2 * pos + 1,
-            parent_cum_tau=child_cum_tau,
         )
 
         node = Node(
@@ -277,8 +269,8 @@ class SLBT(BaseLBTree):
             impurity=impurity,
             impurity_decrease=impurity_decrease,
             tree_partial_impurity_reduction=tree_partial_impurity_reduction,
-            tau_decrease=tau_decrease,
-            cumulative_path_tau=cumulative_path_tau,
+            tau_decrease=0.0,
+            cumulative_path_tau=0.0,
             tree_partial_tau_reduction=0.0,
             distribution=distribution, N=len(y), labels=np.unique(y),
             LIFT_1=lift1, LIFT_2=lift2,
@@ -339,7 +331,6 @@ class SLBT(BaseLBTree):
         self, y, pos, impurity, distribution, depth,
         n_labels, n_samples, n_feats,
         impurity_decrease, tree_partial_impurity_reduction,
-        parent_cum_tau=0.0,
     ):
         if (depth >= self.max_depth
                 or n_labels == 1
@@ -349,7 +340,6 @@ class SLBT(BaseLBTree):
             return self._make_leaf(
                 y, pos, impurity, distribution,
                 impurity_decrease, tree_partial_impurity_reduction,
-                parent_cum_tau=parent_cum_tau,
             )
         return None
 
@@ -357,20 +347,17 @@ class SLBT(BaseLBTree):
         self, y, pos, impurity, distribution, depth,
         best_gpi, best_pi,
         impurity_decrease, tree_partial_impurity_reduction,
-        parent_cum_tau=0.0,
     ):
         if best_gpi < self.min_gpi or best_pi < self.min_ppi or best_pi < 1e-8:
             return self._make_leaf(
                 y, pos, impurity, distribution,
                 impurity_decrease, tree_partial_impurity_reduction,
-                parent_cum_tau=parent_cum_tau,
             )
         return None
 
     def _make_leaf(
         self, y, pos, impurity, distribution,
         impurity_decrease, tree_partial_impurity_reduction,
-        parent_cum_tau=0.0,
     ) -> Node:
         leaf = Node(
             position=pos,
@@ -379,7 +366,7 @@ class SLBT(BaseLBTree):
             impurity_decrease=impurity_decrease,
             tree_partial_impurity_reduction=tree_partial_impurity_reduction,
             tau_decrease=0.0,
-            cumulative_path_tau=parent_cum_tau,
+            cumulative_path_tau=0.0,
             tree_partial_tau_reduction=0.0,
             distribution=distribution,
             N=len(y),
@@ -492,16 +479,36 @@ class SLBT(BaseLBTree):
                     nodes[i], nodes[i + 1] = nodes[i + 1], nodes[i]
                     changed = True
 
-    def _calculate_tree_partial_tau_reduction(self):
+    def _calculate_tau_fields(self):
         """
-        Populate ``tree_partial_tau_reduction`` on every node.
+        Post-fit: compute tau_decrease and cumulative_path_tau for every node.
 
-        The tree is expanded split by split in ascending ``cumulative_path_tau``
-        order (parent-before-child is guaranteed because a child always has
-        strictly higher cumulative_path_tau than its parent).  At each step
-        ``part_tau`` accumulates the ``tau_decrease`` of the node being
-        expanded; that value is assigned to the expanding node.
+        tau_decrease = (I_t - I_L - I_R) / I_root  where I = impurity × N.
+        Σ_splits tau_decrease = τ_tree ∈ [0, 1].
         """
+        if self.root is None:
+            return
+        root_I = self.root.impurity * self.root.N
+        if root_I <= 0:
+            return
+
+        def _traverse(node, cum_tau):
+            node.cumulative_path_tau = cum_tau
+            if node._is_leaf_node():
+                node.tau_decrease = 0.0
+                return
+            I_t   = node.impurity * node.N
+            I_L   = node.left.impurity  * node.left.N
+            I_R   = node.right.impurity * node.right.N
+            delta = max(0.0, I_t - I_L - I_R)
+            node.pi           = delta / I_t   if I_t    > 0 else 0.0
+            node.tau_decrease = delta / root_I
+            _traverse(node.left,  cum_tau + node.tau_decrease)
+            _traverse(node.right, cum_tau + node.tau_decrease)
+
+        _traverse(self.root, 0.0)
+
+    def _calculate_tree_partial_tau_reduction(self):
         if self.root is None:
             return
         all_nodes = []
@@ -510,7 +517,7 @@ class SLBT(BaseLBTree):
         self._bubble_sort_tau_nodes(all_nodes)
 
         self.root.tree_partial_tau_reduction = 0.0
-        part_tau           = 0.0
+        part_tau           = self.root.tau_decrease if self.root.tau_decrease is not None else 0.0
         virtual_leaves     = [self.root.left, self.root.right]
         virtual_leaves_set = {self.root.left, self.root.right}
 
@@ -522,8 +529,8 @@ class SLBT(BaseLBTree):
                 virtual_leaves_set.add(current.left)
                 virtual_leaves.append(current.right)
                 virtual_leaves_set.add(current.right)
-                part_tau += current.tau_decrease
                 current.tree_partial_tau_reduction = part_tau
+                part_tau += current.tau_decrease
             else:
                 current.tree_partial_tau_reduction = part_tau
 

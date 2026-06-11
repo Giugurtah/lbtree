@@ -26,6 +26,13 @@ def _contingency_matrix(x: pd.Series, y: pd.Series) -> np.ndarray:
     -------
     F : np.ndarray, shape (I, J), dtype float64
     """
+    # Strip Categorical dtype to avoid phantom empty-bin rows in child nodes.
+    # When x is a pd.Categorical (e.g. from Categorizer / pd.cut), pd.crosstab
+    # includes ALL defined categories even if some are absent in the current
+    # node subset, making F taller than np.unique(x) and breaking split decoding.
+    if hasattr(x, 'cat'):
+        x = x.astype(object)
+
     F = pd.crosstab(x, y, dropna=False)
     F_cond = F.div(F.sum(axis=1), axis=0).fillna(0)
     return F_cond.to_numpy(dtype=np.float64)
