@@ -362,7 +362,6 @@ void slba_C_execute(int I, int J, int T, int TA, int TB, const double *Fs, doubl
         }
 
         if(f>100000000000000||f<0||isnan(f)){
-            printf("Warning: divergence detected, reset the cycle. \n");
             for(int t=0; t<TA; t++){
                 mat_zero(I, K, U[t]);
             }
@@ -373,8 +372,6 @@ void slba_C_execute(int I, int J, int T, int TA, int TB, const double *Fs, doubl
             f = N + 1.0;      
         }
     }
-
-    printf("Convergenza raggiunta dopo %d iterazioni\n", iter_count);
 
     // Copying results into output arrays
     for(int k=0; k<K; k++){

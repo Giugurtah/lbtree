@@ -65,6 +65,8 @@ class SLBT(BaseLBTree):
         max_depth: int         = 100,
         feats_viewed: int      = 10,
         FAST: bool             = False,
+        node_max_features: int | None = None,
+        rng                    = None,
     ):
         super().__init__(
             min_ppi=min_ppi, min_gpi=min_gpi,
@@ -77,7 +79,9 @@ class SLBT(BaseLBTree):
                 f"homogeneity='{homogeneity}' not supported. "
                 "Choose from: 'none', 'A', 'B', 'AB'."
             )
-        self.homogeneity = homogeneity
+        self.homogeneity       = homogeneity
+        self.node_max_features = node_max_features
+        self._rng              = rng
 
     def get_params(self, deep: bool = True) -> dict:
         p = super().get_params(deep)
@@ -228,6 +232,12 @@ class SLBT(BaseLBTree):
         )
         if leaf is not None:
             return leaf
+
+        # --- per-node random feature subsampling (true RF mode) ---
+        if self.node_max_features is not None and self._rng is not None:
+            n = min(self.node_max_features, X.shape[1])
+            sampled_cols = self._rng.choice(X.columns.tolist(), size=n, replace=False)
+            X = X[sampled_cols]
 
         # --- stratified GPI ranking ---
         gpi_vals, gpi_order = _gpi_stratified(X, y, x_s)

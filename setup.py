@@ -23,9 +23,8 @@ import sys
 from pathlib import Path
 
 from setuptools import setup
-from setuptools.command.build_ext import build_ext
-from setuptools.command.develop   import develop
-from setuptools.command.install   import install
+from setuptools.command.build_py import build_py
+from setuptools.command.develop  import develop
 
 
 # ------------------------------------------------------------------ #
@@ -63,21 +62,20 @@ def _build_libs():
 
 # ------------------------------------------------------------------ #
 #  Custom commands
+#
+#  build_py  — always invoked by `pip install .` (pure-Python packages)
+#  develop   — invoked by `pip install -e .`
 # ------------------------------------------------------------------ #
 
-class BuildLibsAndExt(build_ext):
+class BuildPyWithLibs(build_py):
+    """Compile C libraries then run the normal Python build step."""
     def run(self):
         _build_libs()
         super().run()
 
 
 class DevelopWithLibs(develop):
-    def run(self):
-        _build_libs()
-        super().run()
-
-
-class InstallWithLibs(install):
+    """Compile C libraries then run the normal editable-install step."""
     def run(self):
         _build_libs()
         super().run()
@@ -89,8 +87,7 @@ class InstallWithLibs(install):
 
 setup(
     cmdclass={
-        "build_ext": BuildLibsAndExt,
-        "develop":   DevelopWithLibs,
-        "install":   InstallWithLibs,
+        "build_py": BuildPyWithLibs,
+        "develop":  DevelopWithLibs,
     },
 )

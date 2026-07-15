@@ -1,0 +1,28 @@
+# Compiled C shared libraries (built at install time from csrc/)
+*.so
+*.dylib
+*.dll
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Build & distribution artefacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# macOS metadata
+.DS_Store
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/

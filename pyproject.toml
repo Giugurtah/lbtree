@@ -8,7 +8,7 @@ version         = "0.1.0"
 description     = "Latent Budget Tree — Decision trees for categorical predictors based on Latent Budget Analysis"
 readme          = "README.md"
 requires-python = ">=3.10"
-license         = { text = "MIT" }
+license         = "MIT"
 
 dependencies = [
     "numpy  >= 1.23",

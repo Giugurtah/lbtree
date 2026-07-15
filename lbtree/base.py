@@ -171,8 +171,11 @@ class BaseLBTree:
         Minimum number of samples required to attempt a split.
     max_depth : int, default 100
         Maximum depth of the tree.
-    feats_viewed : int, default 10
+    feats_viewed : int | float, default 10
         Number of top-GPI features evaluated per node.
+        - int   → exact count (capped at the number of available features).
+        - float in (0.0, 1.0] → fraction of available features at each node,
+          resolved to max(1, round(fraction * n_available)) at split time.
     FAST : bool, default False
         When True, the feature loop stops as soon as ``best_ppi > next_gpi``
         (the next candidate cannot improve the split).
@@ -183,14 +186,14 @@ class BaseLBTree:
 
     def __init__(
         self,
-        min_ppi: float        = 0.0,
-        min_gpi: float        = 0.0,
-        min_impurity: float   = 0.0,
-        min_samples_split: int = 1,
-        max_depth: int        = 100,
-        feats_viewed: int     = 10,
-        FAST: bool            = False,
-        homogeneity: str      = "none",
+        min_ppi: float          = 0.0,
+        min_gpi: float          = 0.0,
+        min_impurity: float     = 0.0,
+        min_samples_split: int  = 1,
+        max_depth: int          = 100,
+        feats_viewed: int | float = 10,
+        FAST: bool              = False,
+        homogeneity: str        = "none",
     ):
         # Stopping criteria
         self.min_ppi           = min_ppi
@@ -200,6 +203,15 @@ class BaseLBTree:
         self.max_depth         = max_depth
 
         # Search strategy
+        if isinstance(feats_viewed, float) and not (0.0 < feats_viewed <= 1.0):
+            raise ValueError(
+                f"feats_viewed={feats_viewed!r}: when a float is provided it must "
+                "be in (0.0, 1.0] to represent a fraction of available features."
+            )
+        if isinstance(feats_viewed, int) and feats_viewed < 1:
+            raise ValueError(
+                f"feats_viewed={feats_viewed!r}: integer value must be >= 1."
+            )
         self.feats_viewed = feats_viewed
         self.FAST         = FAST
 
@@ -212,6 +224,19 @@ class BaseLBTree:
         self.targhet_dist = None
         self.root_N       = None
         self.depth        = None
+
+    def _resolve_feats_viewed(self, n_available: int) -> int:
+        """
+        Resolve ``feats_viewed`` to a concrete integer for a node with
+        ``n_available`` candidate features (after dropping constant columns).
+
+        - int   → min(feats_viewed, n_available)
+        - float → max(1, round(feats_viewed * n_available))
+        """
+        fv = self.feats_viewed
+        if isinstance(fv, float):
+            return max(1, round(fv * n_available))
+        return min(fv, n_available)
 
     def get_params(self, deep: bool = True) -> dict:
         """scikit-learn compatible parameter getter."""

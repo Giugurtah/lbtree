@@ -295,7 +295,9 @@ class SCTreeWeighted(BaseLBTree):
     def _find_best_predictor(self, X, y, sample_weight, gpi_order, gpi_vals):
         best = {"feature": None, "threshold": None, "pi": -np.inf, "gpi": -np.inf}
 
-        for rank, col in enumerate(gpi_order[: self.feats_viewed]):
+        n_to_view = self._resolve_feats_viewed(len(gpi_order))
+
+        for rank, col in enumerate(gpi_order[:n_to_view]):
             F, W_row = self._contingency_matrix_weighted(X[col], y, sample_weight)
             pi, S    = score_sctree_weighted(F, W_row, self.model)
 

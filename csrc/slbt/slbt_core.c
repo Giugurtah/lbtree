@@ -182,17 +182,6 @@ void slba_c(int K, int KA, int KB, int I, int J, // Input sizes
         }
     }
 
-    // TODO: CANCELLARE DA QUI
-    printf("Best split trovato: \n"); 
-    for(int t=0; t<KA; t++){
-        printf("[ ");
-        for(int i=0; i<I; i++){
-            printf("%d ", S[t][i]);
-        }
-        printf("]\n");
-    }
-    // TODO: CANCELLARE FINO A  QUI
-
     // Two local matrices F_left and F_right are evaluated in order to calculate the left and right impurity
     for(int t=0; t<K; t++){
         for(int i=0; i<I; i++){
@@ -227,29 +216,6 @@ void slba_c(int K, int KA, int KB, int I, int J, // Input sizes
         }
     }
     
-    // TODO: CANCELLARE DA QUI
-    printf("Matrice FL: \n"); 
-    for(int t=0; t<K; t++){
-        for(int i=0; i<I; i++){
-            for(int j=0; j<J; j++){
-                printf("%f ", FL(t, i, j));
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    printf("Matrice FR: \n"); 
-    for(int t=0; t<K; t++){
-        for(int i=0; i<I; i++){
-            for(int j=0; j<J; j++){
-                printf("%f ", FR(t, i, j));
-            }
-            printf("\n");
-        }
-        printf("\n");
-    }
-    // TODO: CANCELLARE FINO A  QUI
-
     // Check for all left or all right
     for (int t = 0; t < KA; t++) {
         for (int i = 0; i < I; i++) {
@@ -275,4 +241,7 @@ void slba_c(int K, int KA, int KB, int I, int J, // Input sizes
             Ski(t,i) = (double)S[t][i];
         }
     }
+
+    free(F_left);
+    free(F_right);
 }
